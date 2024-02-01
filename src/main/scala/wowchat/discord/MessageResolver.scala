@@ -29,7 +29,7 @@ class MessageResolver(jda: JDA) {
     "quest" -> "\\|.+?\\|Hquest:(\\d+):.+?\\|h\\[(.+?)]\\|h\\|r".r
   )
 
-  protected val linkSite = "http://classicdb.ch"
+  protected val linkSite = "https://www.wowhead.com/classic"
 
   def resolveLinks(message: String): String = {
     linkRegexes.foldLeft(message) {
@@ -52,7 +52,19 @@ class MessageResolver(jda: JDA) {
 
     pass2.replaceAllIn(pass1.replaceAllIn(message.replace("$", "\\$"), _.group(1)), "")
   }
+  
+  def stripTextureCoding(message: String): String = {
+    val thisString = s"\\|T(.*?)\\|t".r
 
+    thisString.replaceAllIn(message.replace("$", "\\$"), "")
+  }
+  
+  def stripAtDiscordMentions(message: String): String = {
+    val thisString = s"@(Here|Everyone)\\b".r
+
+    thisString.replaceAllIn(message.replace("$", "\\$"), _.group(1))
+  }
+  
   def resolveTags(discordChannel: TextChannel, message: String, onError: String => Unit): String = {
     // OR non-capturing regex didn't work for these for some reason
     val regexes = Seq("\"@(.+?)\"", "@([\\w]+)").map(_.r)
@@ -174,7 +186,7 @@ class MessageResolverTBC(jda: JDA) extends MessageResolver(jda) {
     "quest" -> "\\|.+?\\|Hquest:(\\d+):.+?\\|h\\[(.+?)]\\|h\\|r".r
   )
 
-  override protected val linkSite = "http://tbc-twinhead.twinstar.cz"
+  override protected val linkSite = "https://www.wowhead.com/wotlk"
 }
 
 class MessageResolverWotLK(jda: JDA) extends MessageResolverTBC(jda) {
@@ -187,7 +199,7 @@ class MessageResolverWotLK(jda: JDA) extends MessageResolverTBC(jda) {
     "spell" -> "\\|Htrade:(\\d+):.+?\\|h\\[(.+?)]\\|h".r
   )
 
-  override protected val linkSite = "http://wotlk-twinhead.twinstar.cz"
+  override protected val linkSite = "https://www.wowhead.com/wotlk"
 }
 
 class MessageResolverCataclysm(jda: JDA) extends MessageResolverWotLK(jda) {

@@ -14,6 +14,7 @@ case class WhoResponse(playerName: String, guildName: String, lvl: Int, cls: Str
 object CommandHandler extends StrictLogging {
 
   private val NOT_ONLINE = "Bot is not online."
+  private val NOT_ALLOWED = "Bot does not have permission to run that command in this channel."
 
   // make some of these configurable
   private val trigger = "?"
@@ -31,10 +32,11 @@ object CommandHandler extends StrictLogging {
     val splt = message.substring(trigger.length).split(" ")
     val possibleCommand = splt(0).toLowerCase
     val arguments = if (splt.length > 1 && splt(1).length <= 16) Some(splt(1)) else None
-
+    val incChannel = fromChannel.getName.toLowerCase
     Try {
       possibleCommand match {
         case "who" | "online" =>
+		  if (Global.config.discord.enableWhoGmotdChannels.isEmpty || Global.config.discord.enableWhoGmotdChannels.contains(incChannel)) {
           Global.game.fold({
             fromChannel.sendMessage(NOT_ONLINE).queue()
             return true
@@ -45,11 +47,42 @@ object CommandHandler extends StrictLogging {
             }
             whoSucceeded
           })
+		  } else {
+            fromChannel.sendMessage(NOT_ALLOWED).queue()
+            return true
+          }
         case "gmotd" =>
+		  if (Global.config.discord.enableWhoGmotdChannels.isEmpty || Global.config.discord.enableWhoGmotdChannels.contains(incChannel)) {
           Global.game.fold({
             fromChannel.sendMessage(NOT_ONLINE).queue()
             return true
           })(_.handleGmotd())
+          } else {
+            fromChannel.sendMessage(NOT_ALLOWED).queue()
+            return true
+          }
+        case "invite" | "inv" | "ginvite" =>
+          if (Global.config.discord.enableInviteChannels.contains(incChannel)) {
+		          fromChannel.sendMessage(s"Invite sent: ${splt(1)}").queue()
+		          Global.game.fold({
+            fromChannel.sendMessage(NOT_ONLINE).queue()
+            return true
+          })(_.handleGuildInvite(splt(1)))
+		            } else {
+            fromChannel.sendMessage(NOT_ALLOWED).queue()
+            return true
+          }
+        case "gkick" =>
+          if (Global.config.discord.enableKickChannels.contains(incChannel)) {
+		    fromChannel.sendMessage(s"Kick sent: ${splt(1)}").queue()
+            Global.game.fold({
+              fromChannel.sendMessage(NOT_ONLINE).queue()
+              return true
+            })(_.handleGuildKick(splt(1)))
+          } else {
+            fromChannel.sendMessage(NOT_ALLOWED).queue()
+            return true
+          }
       }
     }.fold(throwable => {
       // command not found, should send to wow chat

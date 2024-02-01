@@ -105,7 +105,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       .toSeq
       .sortBy(_.name)
       .map(m => {
-        s"${m.name} (${m.level} ${Classes.valueOf(m.charClass)} in ${GameResources.AREA.getOrElse(m.zoneId, "Unknown Zone")})"
+        s"${m.name} (${m.level} ${Classes.valueOf(m.charClass)} ${GameResources.AREA.getOrElse(m.zoneId, "Unknown Zone")})"
       })
       .mkString(getGuildiesOnlineMessage(false), ", ", "")
   }
@@ -120,7 +120,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       if (size <= 0) {
         "Currently no guildies online."
       } else {
-        s"Currently $size $guildies online:\n"
+        s"Currently $size $guildies online: "
       }
     }
   }
@@ -203,6 +203,46 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
         .replace("%user", "")
         .replace("%message", guildMotd)
     })
+  }
+
+  protected def sendGuildInvite(target: String): Unit = {
+    ctx.foreach(ctx => {
+      val out = PooledByteBufAllocator.DEFAULT.buffer(64, 64)
+      out.writeBytes(target.getBytes("UTF-8"))
+	  out.writeByte(0)
+      val packet = Packet(CMSG_GUILD_INVITE, out)
+      ctx.writeAndFlush(packet)
+
+      logger.info(s"target | bytes: ${target} -- ${target.getBytes("UTF-8")}")
+    })
+  }
+
+  protected def sendGuildKick(target: String): Unit = {
+    ctx.foreach(ctx => {
+      val out = PooledByteBufAllocator.DEFAULT.buffer(64, 64)
+      out.writeBytes(target.getBytes("UTF-8"))
+	  out.writeByte(0)
+      val packet = Packet(CMSG_GUILD_REMOVE, out)
+      ctx.writeAndFlush(packet)
+
+      logger.info(s"target | bytes: ${target} -- ${target.getBytes("UTF-8")}")
+    })
+  }
+
+
+  override def handleGuildInvite(target: String): Option[String] = {
+    if (Global.config.discord.bannedInviteList.contains(target.toLowerCase)) {
+      Some(s"Player ${target} is banned.  Invite not sent.")
+    } else {
+      sendGuildInvite(target)
+      None
+      // Some(s"Invite sent to ${target}")
+	}
+  }
+  
+  override def handleGuildKick(target: String): Option[String] = {
+    sendGuildKick(target)
+    None
   }
 
   protected def buildWhoMessage(name: String): ByteBuf = {

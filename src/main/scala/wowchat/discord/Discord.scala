@@ -49,11 +49,24 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
 
   def sendMessageFromWow(from: Option[String], message: String, wowType: Byte, wowChannel: Option[String]): Unit = {
     Global.wowToDiscord.get((wowType, wowChannel.map(_.toLowerCase))).foreach(discordChannels => {
-      val parsedLinks = messageResolver.resolveEmojis(messageResolver.stripColorCoding(messageResolver.resolveLinks(message)))
-
+      val parsedLinks = 
+        messageResolver.resolveEmojis(
+        messageResolver.stripColorCoding(
+        messageResolver.stripTextureCoding(
+        messageResolver.stripAtDiscordMentions(
+        messageResolver.resolveLinks(
+          message)))))
+		  
       discordChannels.foreach {
         case (channel, channelConfig) =>
           var errors = mutable.ArrayBuffer.empty[String]
+		  
+          if (message == "?who" || message == "?online") {
+            channel.sendMessage("?who").queue()
+          } else if (message.startsWith("?invite") || message.startsWith("?inv") || message.startsWith("?ginvite ")) {
+			channel.sendMessage(message).queue()
+		  }
+
           val parsedResolvedTags = from.map(_ => {
             messageResolver.resolveTags(channel, parsedLinks, errors += _)
           })
@@ -103,17 +116,14 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
       return
     }
 
-    Global.wowToDiscord.get((ChatEvents.CHAT_MSG_GUILD, None))
-      .foreach(_.foreach {
-        case (discordChannel, _) =>
-          val formatted = notificationConfig
-            .format
-            .replace("%time", Global.getTime)
-            .replace("%user", name)
-            .replace("%achievement", messageResolver.resolveAchievementId(achievementId))
 
-          discordChannel.sendMessage(formatted).queue()
-      })
+	  val formatted = notificationConfig
+  	.format
+	  .replace("%time", Global.getTime)
+	  .replace("%user", name)
+	  .replace("%achievement", messageResolver.resolveAchievementId(achievementId))
+	  
+	  Global.discord.sendGuildNotification("achievement", formatted)
   }
 
   override def onStatusChange(event: StatusChangeEvent): Unit = {
@@ -168,26 +178,20 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
           })
 
         // build guild notification maps
-        val guildEventChannels = Global.config.guildConfig.notificationConfigs
-          .filter {
-            case (_, notificationConfig) =>
-              notificationConfig.enabled
-          }
-          .flatMap {
-            case (key, notificationConfig) =>
-              notificationConfig.channel.map(key -> _)
-          }
 
         discordTextChannels.foreach(channel => {
-          guildEventChannels
+          Global.config.guildConfig.notificationConfigs
             .filter {
-              case (_, name) =>
-                name.equalsIgnoreCase(channel.getName) ||
-                name == channel.getId
+              case (_, notificationConfig) =>
+			  	      notificationConfig.enabled &&
+				        !notificationConfig.channel.isEmpty &&
+                (notificationConfig.channel.get.equalsIgnoreCase(channel.getName) ||
+                notificationConfig.channel.get == channel.getId)
             }
             .foreach {
-              case (notificationKey, _) =>
-                Global.guildEventsToDiscord.addBinding(notificationKey, channel)
+              case (key, _) =>
+			          logger.info(s"Adding Binding ($key -> ${channel.getName})")
+                Global.guildEventsToDiscord.addBinding(key, channel)
             }
         })
 
@@ -239,13 +243,13 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
     val message = (sanitizeMessage(event.getMessage.getContentDisplay) +: event.getMessage.getAttachments.asScala.map(_.getUrl))
       .filter(_.nonEmpty)
       .mkString(" ")
-    val enableCommandsChannels = Global.config.discord.enableCommandsChannels
+    val enableCommandsChannels = Global.config.discord.enableInviteChannels ++ Global.config.discord.enableKickChannels ++ Global.config.discord.enableWhoGmotdChannels
     logger.debug(s"RECV DISCORD MESSAGE: [${channel.getName}] [$effectiveName]: $message")
     if (message.isEmpty) {
       logger.error(s"Received a message in channel ${channel.getName} but the content was empty. You likely forgot to enable MESSAGE CONTENT INTENT for your bot in the Discord Developers portal.")
     }
 
-    if ((enableCommandsChannels.nonEmpty && !enableCommandsChannels.contains(channelName)) || !CommandHandler(channel, message)) {
+    if (!CommandHandler(channel, message)) {
       // send to all configured wow channels
       Global.discordToWow
         .get(channelName)
@@ -295,7 +299,7 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
   def shouldFilter(filtersConfig: Option[FiltersConfig], message: String): Boolean = {
     filtersConfig
       .fold(Global.config.filters)(Some(_))
-      .exists(filters => filters.enabled && filters.patterns.exists(message.matches))
+      .exists(filters => filters.enabled && filters.patterns.exists(message.filter(_ >= ' ').matches))
   }
 
   def sanitizeMessage(message: String): String = {
